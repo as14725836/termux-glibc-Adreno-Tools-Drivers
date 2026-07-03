@@ -61,7 +61,7 @@ build_lib_for_linux(){
             -Dglvnd=disabled \
             -Degl=enabled \
             -Dllvm=disabled \
-            -Dshared-llvm=enabled \
+            -Dshared-llvm=disabled \
             -Dshader-cache=enabled \
             -Dshared-glapi=enabled \
             -Dxlib-lease=enabled \
@@ -74,7 +74,7 @@ build_lib_for_linux(){
             -Dgallium-drivers=zink,freedreno,virgl,softpipe \
             -Dgallium-rusticl-enable-drivers=freedreno \
             -Dshader-cache-default=true \
-            -Dvulkan-drivers=freedreno,swrast,virtio \
+            -Dvulkan-drivers=freedreno \
             -Dfreedreno-kmds=kgsl \
             -Dvulkan-layers=anti-lag \
             -Dvideo-codecs=all \

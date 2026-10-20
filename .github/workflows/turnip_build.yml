@@ -174,7 +174,7 @@ jobs:
         run: |
           NOTES=/tmp/release-notes.md
           {
-            echo "## XmoBox Turnip A8xx Gen8 ${TAG}"
+            echo "## XmoBox Turnip A8xx Gen8 ${TAG##*-}"
             echo
             echo "- Mesa 版本: ${VERSION}"
             echo "- Mesa 提交: ${GIT_HASH}"

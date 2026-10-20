@@ -67,9 +67,9 @@ jobs:
       - name: 克隆 Mesa 正式版
         run: |
           echo "📥 克隆 Mesa 仓库..."
-          git clone https://github.com/lfdevs/mesa-for-android-container.git mesa
+          git clone https://github.com/as14725836/mesa-for-android-container.git mesa
           cd mesa
-          git checkout dev/adreno-main
+          git checkout adreno-main-27
           git pull
           echo "🧾 当前分支和提交:"
           git branch -v
@@ -79,9 +79,9 @@ jobs:
         run: |
           echo "🔧 自定义品牌: Turnip → Qualcomm Snapdragon"
           cd mesa
-          sed -i 's/Turnip Adreno (TM) %s%s/Qualcomm Snapdragon Adreno (TM) %s%s/' src/freedreno/vulkan/tu_device.cc
-          sed -i 's/"turnip Mesa driver"/"Qualcomm Snapdragon Driver"/' src/freedreno/vulkan/tu_device.cc
-          sed -i 's/"Mesa " PACKAGE_VERSION MESA_GIT_SHA1/"Qualcomm Snapdragon " PACKAGE_VERSION MESA_GIT_SHA1/' src/freedreno/vulkan/tu_device.cc
+          sed -i 's/Turnip Adreno (TM) %s%s/XmoBox turnip (TM) %s%s/' src/freedreno/vulkan/tu_device.cc
+          sed -i 's/"turnip Mesa driver"/"XmoBox turnip Driver"/' src/freedreno/vulkan/tu_device.cc
+          sed -i 's/"Mesa " PACKAGE_VERSION MESA_GIT_SHA1/"XmoBox turnip " PACKAGE_VERSION MESA_GIT_SHA1/' src/freedreno/vulkan/tu_device.cc
           
       - name: 构建 Mesa
         run: |

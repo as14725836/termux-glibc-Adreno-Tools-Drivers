@@ -40,6 +40,9 @@ jobs:
           fi
   build:
     needs: check-updates
+    concurrency:
+      group: turnip-release
+      cancel-in-progress: false
     if: ${{ needs.check-updates.outputs.new_commit == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
     runs-on: ubuntu-24.04-arm
     steps:
@@ -125,13 +128,27 @@ jobs:
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
           echo "GIT_HASH=${GIT_HASH}" >> $GITHUB_ENV
       
+      - name: 计算发布版本号
+        id: rel
+        run: |
+          TAGS=$(git ls-remote --tags origin 'refs/tags/xmobox-turnip-a8xx-gen8-V*' | awk -F/ '{print $NF}')
+          MAX=0
+          for t in $TAGS; do
+            n=${t##*-V}
+            case "$n" in ''|*[!0-9]*) continue ;; esac
+            if [ "$n" -gt "$MAX" ]; then MAX=$n; fi
+          done
+          NEXT=$((MAX + 1))
+          echo "TAG=xmobox-turnip-a8xx-gen8-V${NEXT}" >> "$GITHUB_ENV"
+          echo "本次版本: V${NEXT}"
+
       - name: 打包构建产物
         run: |
-          echo "📦 开始打包 libvulkan_freedreno.so..."
+          echo "📦 开始打包 ${TAG}.tar.gz..."
           cd mesa
           PACK_START=$(date +%s)
           
-          TAR_NAME="termux-glibc-mesa-${VERSION}-aarch64.tar.gz"
+          TAR_NAME="${TAG}.tar.gz"
           tar -czvf "../${TAR_NAME}" -C builddir/src/freedreno/vulkan libvulkan_freedreno.so
           
           
@@ -146,11 +163,44 @@ jobs:
       - name: 上传构建产物到 Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mesa-artifacts-${{ env.VERSION }}-aarch64
+          name: ${{ env.TAG }}
           path: |
             ${{ env.TAR_NAME }}
             ${{ env.TAR_NAME }}.sha256
       
+      - name: 发布 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOTES=/tmp/release-notes.md
+          {
+            echo "## XmoBox Turnip A8xx Gen8 ${TAG}"
+            echo
+            echo "- Mesa 版本: ${VERSION}"
+            echo "- Mesa 提交: ${GIT_HASH}"
+            echo "- 构建时间: $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo "- 平台: Adreno 8xx / KGSL / aarch64 (termux glibc)"
+            echo
+            echo "### 本次更新"
+            git -C mesa log --oneline -12 | sed 's/^/- /'
+            echo
+            echo "### 优化"
+            echo "- 仅打包 libvulkan_freedreno.so，解压后直接覆盖 \$PREFIX/glibc/lib/libvulkan_freedreno.so"
+            echo "- 启用 GLX-DRI3 与 EGL-DRI3（x11），X11 下可直接呈现"
+            echo "- 关闭 LLVM / libunwind / valgrind / GBM / glvnd，减少运行时依赖"
+            echo "- -O3 release 构建；不启用 ThinLTO，避免额外 lld 依赖"
+            echo "- 修复 KGSL surfaceless 的 loader_funcs 赋值（此前 EGL 无法编译）"
+            echo "- 设备表补充 A830 KGSL rev0 (0x44050000)"
+            echo
+            echo "### 使用"
+            echo '```'
+            echo "tar -xzf ${TAR_NAME} -C \$PREFIX/glibc/lib"
+            echo '```'
+          } > "$NOTES"
+          gh release create "${TAG}" "${TAR_NAME}" "${TAR_NAME}.sha256" \
+            --title "XmoBox Turnip A8xx Gen8 ${TAG##*-}" \
+            --notes-file "$NOTES"
+
       - name: 保存最新提交记录
         if: ${{ needs.check-updates.outputs.latest_hash != '' }}
         run: |

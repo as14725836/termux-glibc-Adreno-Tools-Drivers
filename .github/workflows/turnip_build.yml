@@ -44,6 +44,8 @@ jobs:
     steps:
       - name: 检出仓库
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: 显示构建环境信息
         run: |
@@ -126,17 +128,79 @@ jobs:
       
       - name: 计算发布版本号
         id: rel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAGS=$(git ls-remote --tags origin 'refs/tags/xmobox-turnip-a8xx-gen8-V*' | awk -F/ '{print $NF}')
+          set -e
+          echo "🔢 计算下一个发布版本号（基于 Git 标签 + Release 实际存在性）..."
+          PREFIX="xmobox-turnip-a8xx-gen8-V"
+          
+          # 1) 收集所有匹配的 Git 标签
+          TAG_LIST=$(git tag -l "${PREFIX}*" 2>/dev/null || true)
+          if [ -z "$TAG_LIST" ]; then
+            TAG_LIST=$(git ls-remote --tags origin "refs/tags/${PREFIX}*" 2>/dev/null | awk -F/ '{print $NF}' || true)
+          fi
+          echo "现有 Git 标签："
+          echo "${TAG_LIST:-（无）}" | sed 's/^/  - /'
+
+          # 2) 收集所有现存 Release 的标签名
+          echo "查询 GitHub 现存 Release..."
+          RELEASE_LIST=$(gh release list --limit 200 --json tagName --jq '.[].tagName' 2>/dev/null || true)
+          echo "现存 Release："
+          echo "${RELEASE_LIST:-（无）}" | sed 's/^/  - /'
+
+          # 3) 合并候选，并只统计"仍然存在的 Release"或"标签存在但从未发布过"的最大值
+          #    规则：版本号必须 > 所有现存 Release 的版本号；
+          #          同时也要 > 所有 Git 标签中仍对应 Release 的版本号。
           MAX=0
-          for t in $TAGS; do
-            n=${t##*-V}
+          for t in $TAG_LIST $RELEASE_LIST; do
+            case "$t" in
+              ${PREFIX}*) ;;
+              *) continue ;;
+            esac
+            n=${t##*${PREFIX}}
             case "$n" in ''|*[!0-9]*) continue ;; esac
             if [ "$n" -gt "$MAX" ]; then MAX=$n; fi
           done
-          NEXT=$((MAX + 1))
-          echo "TAG=xmobox-turnip-a8xx-gen8-V${NEXT}" >> "$GITHUB_ENV"
-          echo "本次版本: V${NEXT}"
+
+          # 4) 如果某个标签对应的 Release 已被删除，需要排除该标签带来的"虚高"。
+          #    重新扫描：对每个候选 n，检查 n 是否"有意义"（Release 存在，或标签存在且无任何 Release 大于它）
+          #    简化策略：最终 MAX 取
+          #      a) 现存 Release 最大值
+          #      b) 若不存在任何 Release，则取 Git 标签最大值
+          MAX_REL=0
+          for t in $RELEASE_LIST; do
+            case "$t" in
+              ${PREFIX}*) ;;
+              *) continue ;;
+            esac
+            n=${t##*${PREFIX}}
+            case "$n" in ''|*[!0-9]*) continue ;; esac
+            if [ "$n" -gt "$MAX_REL" ]; then MAX_REL=$n; fi
+          done
+
+          MAX_TAG=0
+          for t in $TAG_LIST; do
+            case "$t" in
+              ${PREFIX}*) ;;
+              *) continue ;;
+            esac
+            n=${t##*${PREFIX}}
+            case "$n" in ''|*[!0-9]*) continue ;; esac
+            if [ "$n" -gt "$MAX_TAG" ]; then MAX_TAG=$n; fi
+          done
+
+          if [ "$MAX_REL" -gt 0 ]; then
+            BASE=$MAX_REL
+            echo "基于现存 Release 最大值：V${BASE}"
+          else
+            BASE=$MAX_TAG
+            echo "无现存 Release，基于 Git 标签最大值：V${BASE}"
+          fi
+
+          NEXT=$((BASE + 1))
+          echo "TAG=${PREFIX}${NEXT}" >> "$GITHUB_ENV"
+          echo "本次版本: ${PREFIX}${NEXT}"
 
       - name: 打包构建产物
         run: |

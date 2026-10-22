@@ -1,15 +1,11 @@
 name: 测试版 Mesa (aarch64, Auto Update + Detailed Log)
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - 'refs/tags/**'
-  schedule:
-    - cron: "0 22 * * *"
+
 permissions:
   contents: write
   actions: write
+
 jobs:
   check-updates:
     runs-on: ubuntu-24.04-arm
@@ -38,12 +34,12 @@ jobs:
           else
             echo "new_commit=false" >> $GITHUB_OUTPUT
           fi
+
   build:
     needs: check-updates
     concurrency:
       group: turnip-release
       cancel-in-progress: false
-    if: ${{ needs.check-updates.outputs.new_commit == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'push' }}
     runs-on: ubuntu-24.04-arm
     steps:
       - name: 检出仓库

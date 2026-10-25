@@ -83,7 +83,7 @@ jobs:
           # glslang 提供 glslangValidator，Mesa 用它编译内置 SPIR-V 着色器
           pacman -Syu --noconfirm --needed --disable-sandbox \
             base-devel meson ninja \
-            python-mako python-yaml \
+            python-mako python-yaml python-packaging \
             glslang libdrm \
             libx11 libxcb libxshmfence libxext libxxf86vm libxrandr \
             expat zlib zstd libarchive \

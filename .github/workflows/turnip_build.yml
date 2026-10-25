@@ -1,4 +1,5 @@
-name: 测试版 Mesa (aarch64, Auto Update + Detailed Log)
+name: 测试版 Mesa (aarch64/Arch Linux, Auto Update + Detailed Log)
+
 on:
   workflow_dispatch:
 
@@ -13,26 +14,29 @@ jobs:
       new_commit: ${{ steps.check.outputs.new_commit }}
       latest_hash: ${{ steps.check.outputs.latest_hash }}
     steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
       - name: 检查 Mesa 上游更新
         id: check
         run: |
           echo "🔍 检查 Mesa 上游提交..."
           LATEST_HASH=$(git ls-remote https://gitlab.freedesktop.org/mesa/mesa.git refs/heads/main | awk '{print $1}')
           echo "最新上游提交: $LATEST_HASH"
-          
+
           STATE_FILE=".mesa_latest_commit"
           if [ -f "$STATE_FILE" ]; then
-            LAST_HASH=$(cat $STATE_FILE)
+            LAST_HASH=$(tr -d '[:space:]' < "$STATE_FILE")
           else
             LAST_HASH=""
           fi
-          echo "上次构建: $LAST_HASH"
-          
-          if [ "$LATEST_HASH" != "$LAST_HASH" ]; then
-            echo "new_commit=true" >> $GITHUB_OUTPUT
-            echo "latest_hash=$LATEST_HASH" >> $GITHUB_OUTPUT
+          echo "上次构建: ${LAST_HASH:-（无记录）}"
+
+          if [ -n "$LATEST_HASH" ] && [ "$LATEST_HASH" != "$LAST_HASH" ]; then
+            echo "new_commit=true" >> "$GITHUB_OUTPUT"
+            echo "latest_hash=$LATEST_HASH" >> "$GITHUB_OUTPUT"
           else
-            echo "new_commit=false" >> $GITHUB_OUTPUT
+            echo "new_commit=false" >> "$GITHUB_OUTPUT"
           fi
 
   build:
@@ -41,30 +45,58 @@ jobs:
       group: turnip-release
       cancel-in-progress: false
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    # Arch Linux ARM64，每日由 GitHub Actions 重建
+    # https://github.com/menci/docker-archlinuxarm
+    container:
+      image: menci/archlinuxarm:base-devel
+    defaults:
+      run:
+        shell: bash
     steps:
+      - name: 确认容器环境
+        run: |
+          echo "=== Arch Linux 环境 ==="
+          head -3 /etc/os-release
+          uname -m
+          command -v git || pacman -S --noconfirm --needed git
+          clang --version | head -1
+          ldd --version | head -1
+          nproc
+          free -h
+          df -h /
+
       - name: 检出仓库
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
+      - name: 安装 Mesa 构建依赖
+        run: |
+          # glslang 提供 glslangValidator，Mesa 用它编译内置 SPIR-V 着色器
+          pacman -Syu --noconfirm --needed \
+            base-devel meson ninja \
+            python-mako python-yaml \
+            glslang libdrm \
+            libx11 libxcb libxshmfence libxext libxxf86vm libxrandr \
+            expat zlib zstd libarchive \
+            clang pkgconf findutils
+
       - name: 显示构建环境信息
         run: |
-          lsb_release -a || true
-          uname -a
-          lscpu | grep -E 'Model name|Architecture|CPU MHz|Core'
-          free -h
-          df -h
-      
-      - name: 安装依赖
-        run: |
-          sudo sed -i "s/^Types: deb$/Types: deb deb-src/" /etc/apt/sources.list.d/ubuntu.sources
-          sudo apt update
-          sudo apt install -y glslang-tools libxxf86vm-dev libxcb-shm0-dev libxcb-glx0-dev \
-            libxext-dev libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri3-dev libxcb-present-dev \
-            libxcb-randr0-dev libxcb-sync-dev libxcb-xfixes0-dev libxshmfence-dev libdrm-dev \
-            libegl1-mesa-dev libexpat1-dev python3-pip
-          pip3 install --user meson ninja mako
-      
+          echo "=== 编译器 ==="
+          clang --version | head -1
+          echo "=== 构建工具 ==="
+          meson --version
+          ninja --version
+          echo "=== 关键库版本 ==="
+          for p in libdrm expat zlib libzstd; do
+            printf '%-10s ' "$p"
+            pkg-config --modversion "$p" 2>/dev/null || echo "(无 pkg-config 条目)"
+          done
+          echo "=== glslangValidator ==="
+          which glslangValidator && glslangValidator --version | head -2 || echo "MISSING"
+
       - name: 克隆 Mesa 正式版
         run: |
           echo "📥 克隆 Mesa 仓库..."
@@ -75,30 +107,34 @@ jobs:
           echo "🧾 当前分支和提交:"
           git branch -v
           git log -1 --oneline --decorate
-          
+
       - name: 自定义品牌
         run: |
-          echo "🔧 自定义品牌: Turnip → Qualcomm Snapdragon"
+          echo "🔧 自定义品牌: Turnip → XmoBox turnip"
           cd mesa
           sed -i 's/Turnip Adreno (TM) %s%s/XmoBox turnip (TM) %s%s/' src/freedreno/vulkan/tu_device.cc
           sed -i 's/"turnip Mesa driver"/"XmoBox turnip Driver"/' src/freedreno/vulkan/tu_device.cc
           sed -i 's/"Mesa " PACKAGE_VERSION MESA_GIT_SHA1/"XmoBox turnip " PACKAGE_VERSION MESA_GIT_SHA1/' src/freedreno/vulkan/tu_device.cc
-          
+          echo "--- 确认替换生效 ---"
+          grep -n 'XmoBox' src/freedreno/vulkan/tu_device.cc
+
       - name: 构建 Mesa
         run: |
           cd mesa
           BUILD_START=$(date +%s)
-          sudo mkdir -p /data/data/com.termux/files/usr/glibc
-          sudo chmod 777 -R /data
 
-          # 设置编译器
+          # 目标安装前缀：Termux glibc 环境
+          PREFIX_GLIBC=/data/data/com.termux/files/usr/glibc
+          mkdir -p "$PREFIX_GLIBC"
+
+          # 与原先 Ubuntu 方案保持一致，继续使用 clang
           export CC=clang
           export CXX=clang++
-          
+
           mkdir -p builddir
           meson setup builddir \
             --libdir=lib \
-            -Dprefix=/data/data/com.termux/files/usr/glibc \
+            -Dprefix="$PREFIX_GLIBC" \
             -Dbuildtype=release \
             -Dplatforms=x11 \
             -Degl-native-platform=x11 \
@@ -114,18 +150,18 @@ jobs:
             -Dgbm=disabled \
             -Db_ndebug=true \
             -Dstrip=true
-          
-          ninja -C builddir -j$(nproc)
+
+          ninja -C builddir -j"$(nproc)"
           ninja -C builddir install
-          
+
           BUILD_END=$(date +%s)
           echo "构建耗时: $((BUILD_END - BUILD_START)) 秒"
-          
+
           VERSION=$(cat VERSION)
           GIT_HASH=$(git rev-parse --short HEAD)
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "GIT_HASH=${GIT_HASH}" >> $GITHUB_ENV
-      
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "GIT_HASH=${GIT_HASH}" >> "$GITHUB_ENV"
+
       - name: 计算发布版本号
         id: rel
         env:
@@ -134,8 +170,7 @@ jobs:
           set -e
           echo "🔢 计算下一个发布版本号（基于 Git 标签 + Release 实际存在性）..."
           PREFIX="xmobox-turnip-a8xx-gen8-V"
-          
-          # 1) 收集所有匹配的 Git 标签
+
           TAG_LIST=$(git tag -l "${PREFIX}*" 2>/dev/null || true)
           if [ -z "$TAG_LIST" ]; then
             TAG_LIST=$(git ls-remote --tags origin "refs/tags/${PREFIX}*" 2>/dev/null | awk -F/ '{print $NF}' || true)
@@ -143,51 +178,29 @@ jobs:
           echo "现有 Git 标签："
           echo "${TAG_LIST:-（无）}" | sed 's/^/  - /'
 
-          # 2) 收集所有现存 Release 的标签名
-          echo "查询 GitHub 现存 Release..."
-          RELEASE_LIST=$(gh release list --limit 200 --json tagName --jq '.[].tagName' 2>/dev/null || true)
+          # 容器内没有 gh 命令行，改用 REST API 查询 Release 列表
+          RELEASE_LIST=$(curl -sL -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+            | sed 's/.*"\([^"]*\)"$/\1/' || true)
           echo "现存 Release："
           echo "${RELEASE_LIST:-（无）}" | sed 's/^/  - /'
 
-          # 3) 合并候选，并只统计"仍然存在的 Release"或"标签存在但从未发布过"的最大值
-          #    规则：版本号必须 > 所有现存 Release 的版本号；
-          #          同时也要 > 所有 Git 标签中仍对应 Release 的版本号。
-          MAX=0
-          for t in $TAG_LIST $RELEASE_LIST; do
-            case "$t" in
-              ${PREFIX}*) ;;
-              *) continue ;;
-            esac
-            n=${t##*${PREFIX}}
-            case "$n" in ''|*[!0-9]*) continue ;; esac
-            if [ "$n" -gt "$MAX" ]; then MAX=$n; fi
-          done
-
-          # 4) 如果某个标签对应的 Release 已被删除，需要排除该标签带来的"虚高"。
-          #    重新扫描：对每个候选 n，检查 n 是否"有意义"（Release 存在，或标签存在且无任何 Release 大于它）
-          #    简化策略：最终 MAX 取
-          #      a) 现存 Release 最大值
-          #      b) 若不存在任何 Release，则取 Git 标签最大值
           MAX_REL=0
           for t in $RELEASE_LIST; do
-            case "$t" in
-              ${PREFIX}*) ;;
-              *) continue ;;
-            esac
+            case "$t" in ${PREFIX}*) ;; *) continue ;; esac
             n=${t##*${PREFIX}}
             case "$n" in ''|*[!0-9]*) continue ;; esac
-            if [ "$n" -gt "$MAX_REL" ]; then MAX_REL=$n; fi
+            [ "$n" -gt "$MAX_REL" ] && MAX_REL=$n
           done
 
           MAX_TAG=0
           for t in $TAG_LIST; do
-            case "$t" in
-              ${PREFIX}*) ;;
-              *) continue ;;
-            esac
+            case "$t" in ${PREFIX}*) ;; *) continue ;; esac
             n=${t##*${PREFIX}}
             case "$n" in ''|*[!0-9]*) continue ;; esac
-            if [ "$n" -gt "$MAX_TAG" ]; then MAX_TAG=$n; fi
+            [ "$n" -gt "$MAX_TAG" ] && MAX_TAG=$n
           done
 
           if [ "$MAX_REL" -gt 0 ]; then
@@ -207,19 +220,17 @@ jobs:
           echo "📦 开始打包 ${TAG}.tar.gz..."
           cd mesa
           PACK_START=$(date +%s)
-          
+
           TAR_NAME="${TAG}.tar.gz"
           tar -czvf "../${TAR_NAME}" -C builddir/src/freedreno/vulkan libvulkan_freedreno.so
-          
-          
+
           cd ..
           sha256sum "${TAR_NAME}" > "${TAR_NAME}.sha256"
-          
+
           PACK_END=$(date +%s)
           echo "打包耗时: $((PACK_END - PACK_START)) 秒"
-          
-          echo "TAR_NAME=${TAR_NAME}" >> $GITHUB_ENV
-      
+          echo "TAR_NAME=${TAR_NAME}" >> "$GITHUB_ENV"
+
       - name: 上传构建产物到 Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -227,12 +238,13 @@ jobs:
           path: |
             ${{ env.TAR_NAME }}
             ${{ env.TAR_NAME }}.sha256
-      
+
       - name: 发布 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          NOTES=/tmp/release-notes.md
+          set -e
+          NOTES="$GITHUB_WORKSPACE/release-notes.md"
           {
             echo "## XmoBox Turnip A8xx Gen8 ${TAG##*-}"
             echo
@@ -240,6 +252,7 @@ jobs:
             echo "- Mesa 提交: ${GIT_HASH}"
             echo "- 构建时间: $(date -u '+%Y-%m-%d %H:%M UTC')"
             echo "- 平台: Adreno 8xx / KGSL / aarch64 (termux glibc)"
+            echo "- 构建环境: **Arch Linux ARM64** (\`menci/archlinuxarm:base-devel\`)"
             echo
             echo "### 本次更新"
             git -C mesa log --oneline -12 | sed 's/^/- /'
@@ -257,9 +270,47 @@ jobs:
             echo "tar -xzf ${TAR_NAME} -C \$PREFIX/glibc/lib"
             echo '```'
           } > "$NOTES"
-          gh release create "${TAG}" "${TAR_NAME}" "${TAR_NAME}.sha256" \
-            --title "XmoBox Turnip A8xx Gen8 ${TAG##*-}" \
-            --notes-file "$NOTES"
+
+          # 容器内无 gh，改用 REST API 创建 Release 并上传资产
+          python3 - "$TAG" "$TAR_NAME" "$NOTES" <<'PYEOF'
+          import json, os, sys, urllib.request
+
+          tag, tar_name, notes_path = sys.argv[1], sys.argv[2], sys.argv[3]
+          notes = open(notes_path, encoding="utf-8").read()
+          token = os.environ["GH_TOKEN"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          api = "https://api.github.com"
+
+          def call(method, url, body=None, ctype="application/json"):
+              if body is None:
+                  data = None
+              elif isinstance(body, bytes):
+                  data = body
+              else:
+                  data = json.dumps(body).encode()
+              req = urllib.request.Request(url, data=data, method=method)
+              req.add_header("Authorization", "Bearer " + token)
+              req.add_header("Accept", "application/vnd.github+json")
+              if data is not None:
+                  req.add_header("Content-Type", ctype)
+              with urllib.request.urlopen(req) as r:
+                  txt = r.read().decode()
+                  return json.loads(txt) if txt.strip() else {}
+
+          rel = call("POST", f"{api}/repos/{repo}/releases", {
+              "tag_name": tag,
+              "name": "XmoBox Turnip A8xx Gen8 " + tag.rsplit("-", 1)[-1],
+              "body": notes,
+          })
+          upload_url = rel["upload_url"].split("{")[0]
+          print("Release 已创建:", rel["html_url"])
+
+          for fn in (tar_name, tar_name + ".sha256"):
+              call("POST", f"{upload_url}?name={fn}",
+                   body=open(fn, "rb").read(),
+                   ctype="application/octet-stream")
+              print("已上传:", fn)
+          PYEOF
 
       - name: 保存最新提交记录
         if: ${{ needs.check-updates.outputs.latest_hash != '' }}
@@ -270,11 +321,11 @@ jobs:
           git add .mesa_latest_commit || true
           git commit -m "Update Mesa commit record" || true
           git push || true
-      
+
       - name: 输出总结信息
         run: |
           echo "构建完成"
-          echo "版本: ${{ env.VERSION }}"
-          echo "提交: ${{ env.GIT_HASH }}"
+          echo "版本: ${VERSION}"
+          echo "提交: ${GIT_HASH}"
           echo "构建产物已保存到 Artifacts"
-          echo "- ${{ env.TAR_NAME }}"
+          echo "- ${TAR_NAME}"

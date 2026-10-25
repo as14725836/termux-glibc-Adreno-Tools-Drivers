@@ -54,17 +54,22 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: 确认容器环境
+      - name: 确认容器环境并安装 git
         run: |
           echo "=== Arch Linux 环境 ==="
-          head -3 /etc/os-release
-          uname -m
-          command -v git || pacman -S --noconfirm --needed git
-          clang --version | head -1
-          ldd --version | head -1
-          nproc
-          free -h
-          df -h /
+          head -3 /etc/os-release || true
+          uname -m || true
+
+          # 镜像里 pacman 数据库为空，必须先刷新才能装包；
+          # 且 actions/checkout 依赖 git，所以这一步要先装好 git
+          pacman -Syu --noconfirm --needed git
+
+          echo "=== 基础信息 ==="
+          git --version
+          ldd --version | head -1 || true
+          nproc || true
+          free -h || true
+          df -h / || true
 
       - name: 检出仓库
         uses: actions/checkout@v4

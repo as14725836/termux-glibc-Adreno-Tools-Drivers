@@ -50,6 +50,8 @@ jobs:
     # https://github.com/menci/docker-archlinuxarm
     container:
       image: menci/archlinuxarm:base-devel
+      # pacman 7.x 的 Landlock 沙箱在容器内无法生效，需要特权模式
+      options: --privileged
     defaults:
       run:
         shell: bash
@@ -62,7 +64,7 @@ jobs:
 
           # 镜像里 pacman 数据库为空，必须先刷新才能装包；
           # 且 actions/checkout 依赖 git，所以这一步要先装好 git
-          pacman -Syu --noconfirm --needed git
+          pacman -Syu --noconfirm --needed --disable-sandbox git
 
           echo "=== 基础信息 ==="
           git --version
@@ -79,7 +81,7 @@ jobs:
       - name: 安装 Mesa 构建依赖
         run: |
           # glslang 提供 glslangValidator，Mesa 用它编译内置 SPIR-V 着色器
-          pacman -Syu --noconfirm --needed \
+          pacman -Syu --noconfirm --needed --disable-sandbox \
             base-devel meson ninja \
             python-mako python-yaml \
             glslang libdrm \

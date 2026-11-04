@@ -125,7 +125,6 @@ jobs:
             -Dshader-cache-default=true \
             -Dvulkan-drivers=freedreno \
             -Dfreedreno-kmds=kgsl \
-            -Dvulkan-layers=anti-lag \
             -Dvideo-codecs=all \
             -Dgbm=disabled \
             -Db_ndebug=true \

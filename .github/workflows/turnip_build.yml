@@ -60,7 +60,7 @@ jobs:
           sudo sed -i "s/^Types: deb$/Types: deb deb-src/" /etc/apt/sources.list.d/ubuntu.sources
           sudo apt update
           sudo apt install -y glslang-tools libxxf86vm-dev libxcb-shm0-dev libxcb-glx0-dev \
-            libxext-dev libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri3-dev libxcb-present-dev \
+            libxext-dev llvm-19 libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri3-dev libxcb-present-dev \
             libxcb-randr0-dev libxcb-sync-dev libxcb-xfixes0-dev libxshmfence-dev libdrm-dev \
             libegl1-mesa-dev libexpat1-dev python3-pip
           pip3 install --user meson ninja mako
@@ -103,14 +103,30 @@ jobs:
             -Dplatforms=x11 \
             -Degl-native-platform=x11 \
             -Dglx=dri \
+            -Dglx-direct=true \
+            -Dopengl=true \
+            -Dgles1=enabled \
+            -Dgles2=enabled \
             -Dglvnd=disabled \
+            -Degl=enabled \
             -Dllvm=disabled \
-            -Dxlib-lease=disabled \
+            -Dshared-llvm=enabled \
+            -Dshader-cache=enabled \
+            -Dshared-glapi=enabled \
+            -Dxlib-lease=enabled \
+            -Dvulkan-beta=true \
             -Dlibunwind=disabled \
             -Dvalgrind=disabled \
+            -Dmicrosoft-clc=disabled \
+            -Dgallium-rusticl=false \
+            -Dgallium-extra-hud=true \
             -Dgallium-drivers=zink,freedreno \
+            -Dgallium-rusticl-enable-drivers=freedreno \
+            -Dshader-cache-default=true \
             -Dvulkan-drivers=freedreno \
             -Dfreedreno-kmds=kgsl \
+            -Dvulkan-layers=anti-lag \
+            -Dvideo-codecs=all \
             -Dgbm=disabled \
             -Db_ndebug=true \
             -Dstrip=true

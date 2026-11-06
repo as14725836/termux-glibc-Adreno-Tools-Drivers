@@ -529,7 +529,7 @@ jobs:
       - name: 校验单文件结果
         run: |
           set -e
-          LIBGL=$(find builddir -name 'libGL.so.1.2.0' -o -name 'libGL.so.1.*' | head -1)
+          LIBGL=$(find mesa/builddir -name 'libGL.so.1.2.0' | head -1)
           echo "libGL: $LIBGL"
           ls -la "$LIBGL"
           echo "--- DT_NEEDED ---"

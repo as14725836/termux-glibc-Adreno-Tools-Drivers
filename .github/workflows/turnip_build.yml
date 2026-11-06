@@ -572,5 +572,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${TAG}" "${ZTAR_STATIC}" "${ZTAR_STATIC}.sha256" --clobber || \
-            echo "⚠️ Release ${TAG} 尚不存在（build job 可能还没跑完），仅保留 artifact"
+          # zink-static 与 build 并行跑，而 Release 是 build job 创建的。
+          # 这里轮询等待 Release 出现（最多 15 分钟），而不要直接失败。
+          ok=0
+          for i in $(seq 1 60); do
+            if gh release view "${TAG}" >/dev/null 2>&1; then ok=1; break; fi
+            echo "[$i/60] Release ${TAG} 尚未就绪，5s 后重试..."
+            sleep 5
+          done
+          if [ "$ok" = "1" ]; then
+            gh release upload "${TAG}" "${ZTAR_STATIC}" "${ZTAR_STATIC}.sha256" --clobber
+            echo "✅ 已追加到 Release ${TAG}"
+          else
+            echo "⚠️ 等待 15 分钟仍未找到 Release ${TAG}，仅保留 artifact"
+          fi

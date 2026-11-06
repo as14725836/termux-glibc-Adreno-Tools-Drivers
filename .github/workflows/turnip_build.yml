@@ -243,102 +243,6 @@ jobs:
           
           echo "TAR_NAME=${TAR_NAME}" >> $GITHUB_ENV
 
-      # ------------------------------------------------------------------
-      # zink 单独打包：libgallium-<ver>.so + libGL.so.1
-      # 背景：zink 链路需要这两个库一起替换，混在 turnip 包里容易装错，
-      #       所以单独出一个 zink-<TAG> 包。
-      # 注意：
-      #   * libgallium 命名随 VERSION 变化（27.0.0-devel ->
-      #     libgallium-27.0.0-devel.so）。上游把 -devel 去掉后会变成
-      #     libgallium-27.0.0.so，所以这里按优先级依次找，并预留
-      #     libgallium_dri.so（unversion-libgallium / android 平台命名）。
-      #   * libGL.so.1 是 soversion（gl_lib_version=1.2.0 的 soname），
-      #     实体常是 libGL.so.1.2.0，同时带上实体和软链最稳妥。
-      # 找不到时直接失败，避免发出缺文件的包。
-      - name: 打包 zink 产物 (libgallium + libGL)
-        run: |
-          set -e
-          PREFIX_LIB="/data/data/com.termux/files/usr/glibc/lib"
-          echo "🔎 在 ${PREFIX_LIB} 查找 zink 依赖库..."
-          ls -la "$PREFIX_LIB" 2>/dev/null | grep -Ei 'libgallium|libGL' || true
-
-          ZSTAGE="$PWD/zink-stage"
-          rm -rf "$ZSTAGE"
-          mkdir -p "$ZSTAGE"
-
-          # --- libgallium：按优先级找，找到第一个就停 ---
-          GALLIUM_SRC=""
-          GALLIUM_NAME=""
-          for cand in "libgallium-27.0.0-devel.so" "libgallium-27.0.0.so" "libgallium_dri.so"; do
-            if [ -f "${PREFIX_LIB}/${cand}" ]; then
-              GALLIUM_SRC="${PREFIX_LIB}/${cand}"
-              GALLIUM_NAME="${cand}"
-              echo "✅ 找到 libgallium: ${cand}"
-              break
-            fi
-          done
-
-          # 兜底：版本号万一和预期不同，按 glob 找最高优先级的实际文件
-          if [ -z "$GALLIUM_SRC" ]; then
-            echo "ℹ️ 预期文件名未命中，改用 glob 扫描 libgallium-*.so"
-            for cand in "${PREFIX_LIB}"/libgallium-*.so; do
-              [ -e "$cand" ] || continue
-              GALLIUM_SRC="$cand"
-              GALLIUM_NAME="$(basename "$cand")"
-              echo "✅ 找到 libgallium: ${GALLIUM_NAME}"
-              break
-            done
-          fi
-
-          if [ -z "$GALLIUM_SRC" ]; then
-            echo "❌ 未找到 libgallium 库（已尝试 libgallium-27.0.0-devel.so /"
-            echo "   libgallium-27.0.0.so / libgallium_dri.so / libgallium-*.so）"
-            echo "   ${PREFIX_LIB} 下的实际内容："
-            ls -la "$PREFIX_LIB" || true
-            exit 1
-          fi
-          cp -av "$GALLIUM_SRC" "$ZSTAGE/"
-
-          # --- libGL：实体 + 软链一起带 ---
-          GL_FOUND=0
-          if [ -f "${PREFIX_LIB}/libGL.so.1" ] || [ -L "${PREFIX_LIB}/libGL.so.1" ]; then
-            # 先复制软链目标（实体），再复制软链本身
-            GL_REAL="$(readlink -f "${PREFIX_LIB}/libGL.so.1" || true)"
-            if [ -n "$GL_REAL" ] && [ -f "$GL_REAL" ]; then
-              cp -av "$GL_REAL" "$ZSTAGE/"
-              echo "✅ 找到 libGL 实体: $(basename "$GL_REAL")"
-            fi
-            cp -av "${PREFIX_LIB}/libGL.so.1" "$ZSTAGE/"
-            echo "✅ 找到 libGL.so.1"
-            GL_FOUND=1
-          fi
-          # 兜底：没有 .so.1 时按 glob 找实体
-          if [ "$GL_FOUND" -eq 0 ]; then
-            for cand in "${PREFIX_LIB}"/libGL.so.*.*; do
-              [ -e "$cand" ] || continue
-              cp -av "$cand" "$ZSTAGE/"
-              echo "✅ 找到 libGL 实体: $(basename "$cand")"
-              GL_FOUND=1
-              break
-            done
-          fi
-          if [ "$GL_FOUND" -eq 0 ]; then
-            echo "❌ 未找到 libGL.so.1 / libGL.so.*.*"
-            ls -la "$PREFIX_LIB" | grep -i gl || true
-            exit 1
-          fi
-
-          # --- 打包 ---
-          ZTAR_NAME="zink-${TAG}.tar.gz"
-          echo "📦 打包 ${ZTAR_NAME} ..."
-          ls -la "$ZSTAGE"
-          tar -czvf "${ZTAR_NAME}" -C "$ZSTAGE" .
-          sha256sum "${ZTAR_NAME}" > "${ZTAR_NAME}.sha256"
-
-          echo "ZTAR_NAME=${ZTAR_NAME}" >> "$GITHUB_ENV"
-          echo "GALLIUM_NAME=${GALLIUM_NAME}" >> "$GITHUB_ENV"
-          echo "✅ zink 包完成: ${ZTAR_NAME} ($(du -h "${ZTAR_NAME}" | cut -f1))"
-      
       - name: 上传构建产物到 Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -346,8 +250,6 @@ jobs:
           path: |
             ${{ env.TAR_NAME }}
             ${{ env.TAR_NAME }}.sha256
-            ${{ env.ZTAR_NAME }}
-            ${{ env.ZTAR_NAME }}.sha256
       
       - name: 发布 Release
         env:
@@ -367,7 +269,7 @@ jobs:
             echo
             echo "### 包内容"
             echo "- \`${TAR_NAME}\`：仅 \`libvulkan_freedreno.so\`（turnip）"
-            echo "- \`${ZTAR_NAME}\`：\`${GALLIUM_NAME}\` + \`libGL.so.1\`（zink）"
+            echo "> zink 的单文件 \`libGL.so.1\` 由 zink-static job 单独发布。"
             echo
             echo "### 优化"
             echo "- 仅打包 libvulkan_freedreno.so，解压后直接覆盖 \$PREFIX/glibc/lib/libvulkan_freedreno.so"
@@ -382,15 +284,10 @@ jobs:
             echo "# turnip (Vulkan)"
             echo "tar -xzf ${TAR_NAME} -C \$PREFIX/glibc/lib"
             echo
-            echo "# zink (OpenGL over Vulkan)"
-            echo "tar -xzf ${ZTAR_NAME} -C \$PREFIX/glibc/lib"
             echo '```'
             echo
-            echo "> zink 包内含 \`${GALLIUM_NAME}\` 与 \`libGL.so.1\`，"
-            echo "> 二者需成对替换，请勿只覆盖其中一个。"
           } > "$NOTES"
           gh release create "${TAG}" "${TAR_NAME}" "${TAR_NAME}.sha256" \
-            "${ZTAR_NAME}" "${ZTAR_NAME}.sha256" \
             --title "XmoBox Turnip A8xx Gen8 ${TAG##*-}" \
             --notes-file "$NOTES"
 
@@ -411,8 +308,6 @@ jobs:
           echo "提交: ${{ env.GIT_HASH }}"
           echo "构建产物已保存到 Artifacts"
           echo "- ${{ env.TAR_NAME }}"
-          echo "- ${{ env.ZTAR_NAME }}"
-          echo "  (libgallium: ${{ env.GALLIUM_NAME }} + libGL.so.1)"
 
   # -------------------------------------------------------------------
   # zink-static：把 gallium 全部静态内联，产出单文件 libGL.so.1

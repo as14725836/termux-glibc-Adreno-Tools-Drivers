@@ -274,13 +274,13 @@ jobs:
             echo "> 解压覆盖到 \$PREFIX/glibc/lib 即完成替换，无需再配 libgallium。"
             echo "> 注：Mesa 编译实体名为 libGL.so.1.2.0（SONAME 为 libGL.so.1），"
             echo "> 包内已把实体直接命名为 libGL.so.1，避免软链指向旧文件。"
+            echo "> 体积优化：strip 掉 2.5 MB 静态符号表；只编 zink 不编 freedreno 驱动。"
             echo
             echo "### 优化"
             echo "- 仅打包 libvulkan_freedreno.so，解压后直接覆盖 \$PREFIX/glibc/lib/libvulkan_freedreno.so"
             echo "- 启用 GLX-DRI3 与 EGL-DRI3（x11），X11 下可直接呈现"
             echo "- 关闭 LLVM / libunwind / valgrind / GBM / glvnd，减少运行时依赖"
             echo "- -O3 release 构建；turnip 包不启用 ThinLTO"
-            echo "- zink-static 包启用 ThinLTO + strip，体积更小"
             echo "- 修复 KGSL surfaceless 的 loader_funcs 赋值（此前 EGL 无法编译）"
             echo "- 设备表补充 A830 KGSL rev0 (0x44050000)"
             echo
@@ -346,7 +346,7 @@ jobs:
             libxext-dev llvm-19 libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri3-dev libxcb-present-dev \
             libxcb-randr0-dev libxcb-sync-dev libxcb-xfixes0-dev libxshmfence-dev libdrm-dev \
             libgbm-dev libegl1-mesa-dev libexpat1-dev libwayland-dev python3-pip \
-            libarchive-dev lld-19
+            libarchive-dev
           pip3 install --user meson ninja mako
 
       - name: 克隆 Mesa 正式版
@@ -389,15 +389,6 @@ jobs:
           cd mesa
           export CC=clang
           export CXX=clang++
-          # ThinLTO 需要 lld；Ubuntu 的 lld-19 只装 ld.lld-19，做个软链。
-          if command -v ld.lld >/dev/null 2>&1; then
-            echo "ld.lld: $(ld.lld --version | head -1)"
-          elif [ -x /usr/bin/ld.lld-19 ]; then
-            sudo ln -sf /usr/bin/ld.lld-19 /usr/bin/ld.lld
-            echo "已软链 ld.lld-19 -> /usr/bin/ld.lld"
-          else
-            echo "⚠️ 找不到 lld，ThinLTO 可能失败"
-          fi
           mkdir -p builddir
           meson setup builddir \
             --wrap-mode=nofallback \
@@ -431,8 +422,6 @@ jobs:
             -Dvideo-codecs=all \
             -Dgbm=disabled \
             -Db_ndebug=true \
-            -Db_lto=true \
-            -Db_lto_mode=thin \
             -Dstatic-libgl=true \
             -Dstrip=true
           ninja -C builddir -j$(nproc)

@@ -269,7 +269,11 @@ jobs:
             echo
             echo "### 包内容"
             echo "- \`${TAR_NAME}\`：仅 \`libvulkan_freedreno.so\`（turnip）"
-            echo "> zink 的单文件 \`libGL.so.1\` 由 zink-static job 单独发布。"
+            echo "> zink 由 zink-static job 单独发布为 \`zink-static-${TAG}.tar.gz\`："
+            echo "> 单个 \`libGL.so.1\`（含内置 gallium/zink，无 libgallium-<ver>.so 依赖）"
+            echo "> 加一个 \`libGL.so\` 编译期软链，解压覆盖即可，无需再配 libgallium。"
+            echo "> 注：Mesa 编译实体名为 libGL.so.1.2.0（SONAME 为 libGL.so.1），"
+            echo "> 包内已把实体直接命名为 libGL.so.1，避免软链指向旧文件。"
             echo
             echo "### 优化"
             echo "- 仅打包 libvulkan_freedreno.so，解压后直接覆盖 \$PREFIX/glibc/lib/libvulkan_freedreno.so"
@@ -444,8 +448,11 @@ jobs:
           rm -rf "$STAGE"; mkdir -p "$STAGE"
           LIBGL=$(find mesa/builddir -name 'libGL.so.1.2.0' | head -1)
           [ -n "$LIBGL" ] || { echo "❌ 找不到 libGL.so.1.2.0"; exit 1; }
-          cp -av "$LIBGL" "$STAGE/libGL.so.1.2.0"
-          ln -sf libGL.so.1.2.0 "$STAGE/libGL.so.1"
+          # Mesa 的实体名是 libGL.so.1.2.0（gl_lib_version=1.2.0），
+          # 而 SONAME 是 libGL.so.1。这里把实体直接命名成 libGL.so.1，
+          # 解压覆盖后就是一个普通文件，不再依赖 libGL.so.1.2.0 软链，
+          # 也就不会出现「替换了 .so.1.2.0 但 .so.1 还指向旧文件」的问题。
+          cp -av "$LIBGL" "$STAGE/libGL.so.1"
           ln -sf libGL.so.1 "$STAGE/libGL.so"
 
           ZTAR="zink-static-${TAG}.tar.gz"

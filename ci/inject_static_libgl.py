@@ -65,7 +65,15 @@ libgallium_dri_static = static_library(
     libgallium, libglapi, libpipe_loader_static, libws_null, libwsw, libswdri,
     libswkmsdri, gallium_dri_link_with
   ],
-  link_whole : [libdri, gallium_dri_link_whole],
+  # 注意：这里不能 link_whole libdri。
+  # libglx 自带 src/glx/dri_common.c，定义了同名但不同签名的
+  # dri_bind_context / dri_unbind_context / dri_destroy_context
+  # （glx 侧用 struct glx_context*，gallium 侧用 struct dri_context*）。
+  # 动态库模式下各 .so 符号表独立所以不冲突；静态内联进 libGL 后
+  # link_whole 会把 libdri 的同名强符号一并拉入，直接 multiple definition。
+  # libGL 只需要 dri_target.c + libgallium 提供的 screen 创建入口，
+  # galium 侧 DRI 前端桩由 libglx 自己那份提供。
+  link_with : [gallium_dri_link_whole],
   dependencies : [
     dep_libdrm, dep_llvm, dep_thread, idep_xmlconfig, idep_mesautil,
     driver_swrast, driver_r300, driver_r600, driver_radeonsi, driver_nouveau,

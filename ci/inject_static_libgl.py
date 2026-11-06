@@ -52,6 +52,10 @@ patch('src/gallium/targets/dri/meson.build',
 )
 
 # 静态版 libgallium：供 -Dstatic-libgl=true 时 libGL 内联，产出单文件 zink 库。
+# link_whole libdri：静态合并后 libglx 需要通过 driBindContext / driDestroyContext
+# 等符号调用 gallium 侧实现，必须全量拉入。与 libglx 的同名冲突
+# (dri_bind_context / dri_unbind_context / dri_destroy_context) 已在
+# src/glx/meson.build 里用 -D 宏把 glx 那份重命名成 glx_dri_*，两者彻底隔离。
 libgallium_dri_static = static_library(
   'gallium_dri_static',
   files('dri_target.c'),
@@ -65,15 +69,7 @@ libgallium_dri_static = static_library(
     libgallium, libglapi, libpipe_loader_static, libws_null, libwsw, libswdri,
     libswkmsdri, gallium_dri_link_with
   ],
-  # 注意：这里不能 link_whole libdri。
-  # libglx 自带 src/glx/dri_common.c，定义了同名但不同签名的
-  # dri_bind_context / dri_unbind_context / dri_destroy_context
-  # （glx 侧用 struct glx_context*，gallium 侧用 struct dri_context*）。
-  # 动态库模式下各 .so 符号表独立所以不冲突；静态内联进 libGL 后
-  # link_whole 会把 libdri 的同名强符号一并拉入，直接 multiple definition。
-  # libGL 只需要 dri_target.c + libgallium 提供的 screen 创建入口，
-  # galium 侧 DRI 前端桩由 libglx 自己那份提供。
-  link_with : [gallium_dri_link_whole],
+  link_whole : [libdri, gallium_dri_link_whole],
   dependencies : [
     dep_libdrm, dep_llvm, dep_thread, idep_xmlconfig, idep_mesautil,
     driver_swrast, driver_r300, driver_r600, driver_radeonsi, driver_nouveau,
@@ -85,6 +81,33 @@ libgallium_dri_static = static_library(
 )
 """,
 'libgallium_dri_static = static_library(')
+
+patch('src/glx/meson.build',
+"""extra_libs_libglx = []
+extra_deps_libgl = []
+extra_ld_args_libgl = []
+c_args_libglx = []
+""",
+"""extra_libs_libglx = []
+extra_deps_libgl = []
+extra_ld_args_libgl = []
+c_args_libglx = []
+
+# static-libgl 时，libglx 与 gallium 的 libdri 会被链进同一个 libGL.so.1。
+# 两边各有一份同名但签名不同的 dri_bind_context / dri_unbind_context /
+# dri_destroy_context（glx 侧用 struct glx_context*，gallium 侧用
+# struct dri_context*），动态库模式下符号表互相独立所以没事，静态合并后
+# 就是 multiple definition。这里把 glx 那份重命名，两者彻底隔离。
+# gallium 侧不 include src/glx/dri_common.h，所以 -D 不会误伤。
+if get_option('static-libgl')
+  c_args_libglx += [
+    '-Ddri_bind_context=glx_dri_bind_context',
+    '-Ddri_unbind_context=glx_dri_unbind_context',
+    '-Ddri_destroy_context=glx_dri_destroy_context',
+  ]
+endif
+""",
+"glx_dri_bind_context")
 
 patch('src/glx/meson.build',
 """glx_gallium_link = []
@@ -99,6 +122,6 @@ if with_dri
     glx_gallium_link += libgallium_dri
   endif
 endif""",
-"get_option('static-libgl')")
+"glx_gallium_link += libgallium_dri_static")
 
 print('static-libgl 注入完成')

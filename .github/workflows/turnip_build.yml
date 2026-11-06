@@ -83,6 +83,13 @@ jobs:
           sed -i 's/Turnip Adreno (TM) %s%s/XmoBox turnip (TM) %s%s/' src/freedreno/vulkan/tu_device.cc
           sed -i 's/"turnip Mesa driver"/"XmoBox turnip Driver"/' src/freedreno/vulkan/tu_device.cc
           sed -i 's/"Mesa " PACKAGE_VERSION MESA_GIT_SHA1/"XmoBox turnip " PACKAGE_VERSION MESA_GIT_SHA1/' src/freedreno/vulkan/tu_device.cc
+
+      - name: 注入 static-libgl 支持 (单文件 zink)
+        run: |
+          # 给 mesa 源码加 -Dstatic-libgl 选项：把 gallium(zink+freedreno)
+          # 整条链静态内联进 libGL.so.1；开启后运行时不再需要独立的
+          # libgallium-<ver>.so，zink 只需一个文件。默认关闭，保持原行为。
+          python3 ci/inject_static_libgl.py mesa
           
       - name: 构建 Mesa
         run: |
@@ -128,6 +135,7 @@ jobs:
             -Dvideo-codecs=all \
             -Dgbm=disabled \
             -Db_ndebug=true \
+            -Dstatic-libgl=false \
             -Dstrip=true
           
           ninja -C builddir -j$(nproc)
@@ -405,3 +413,162 @@ jobs:
           echo "- ${{ env.TAR_NAME }}"
           echo "- ${{ env.ZTAR_NAME }}"
           echo "  (libgallium: ${{ env.GALLIUM_NAME }} + libGL.so.1)"
+
+  # -------------------------------------------------------------------
+  # zink-static：把 gallium 全部静态内联，产出单文件 libGL.so.1
+  #
+  # 与上面 build job 完全独立（不复用其产物），只在 static-libgl 选项上
+  # 不同。产出 zink-static-<TAG>.tar.gz，内含唯一一个 libGL.so.1，
+  # 解压覆盖即可，不再需要配对的 libgallium-<ver>.so。
+  #
+  # 用途：需要"一个文件就是全部"的场合（如打包进 deb/AppImage、
+  # 或避免 libgallium 版本错配）。
+  # 注意：此版本不含任何外部 DRI 驱动加载能力（swrast_dri.so 等），
+  # zink + freedreno 已内建，日常使用无差别。
+  # -------------------------------------------------------------------
+  zink-static:
+    needs: check-updates
+    concurrency:
+      group: zink-static-release
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 安装依赖
+        run: |
+          sudo sed -i "s/^Types: deb$/Types: deb deb-src/" /etc/apt/sources.list.d/ubuntu.sources
+          sudo apt update
+          sudo apt install -y glslang-tools libxrandr-dev libxxf86vm-dev libxcb-shm0-dev libxcb-glx0-dev \
+            libxext-dev llvm-19 libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri3-dev libxcb-present-dev \
+            libxcb-randr0-dev libxcb-sync-dev libxcb-xfixes0-dev libxshmfence-dev libdrm-dev \
+            libgbm-dev libegl1-mesa-dev libexpat1-dev libwayland-dev python3-pip
+          pip3 install --user meson ninja mako
+
+      - name: 克隆 Mesa 正式版
+        run: |
+          git clone https://github.com/as14725836/mesa-for-android-container.git mesa
+          cd mesa
+          git checkout adreno-main-27
+          git pull
+
+      - name: 自定义品牌
+        run: |
+          cd mesa
+          sed -i 's/Turnip Adreno (TM) %s%s/XmoBox turnip (TM) %s%s/' src/freedreno/vulkan/tu_device.cc
+          sed -i 's/"turnip Mesa driver"/"XmoBox turnip Driver"/' src/freedreno/vulkan/tu_device.cc
+
+      - name: 计算发布版本号
+        id: rel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          PREFIX="xmobox-turnip-a8xx-gen8-V"
+          MAX=0
+          RELEASE_LIST=$(gh release list --limit 200 --json tagName --jq '.[].tagName' 2>/dev/null || true)
+          for t in $RELEASE_LIST; do
+            case "$t" in ${PREFIX}*) ;; *) continue ;; esac
+            n=${t##*${PREFIX}}
+            case "$n" in ''|*[!0-9]*) continue ;; esac
+            [ "$n" -gt "$MAX" ] && MAX=$n
+          done
+          NEXT=$((MAX + 1))
+          echo "TAG=${PREFIX}${NEXT}" >> "$GITHUB_ENV"
+          echo "本次版本: ${PREFIX}${NEXT}"
+
+      - name: 注入 static-libgl 支持
+        run: python3 ci/inject_static_libgl.py mesa
+
+      - name: 构建 (static-libgl=true)
+        run: |
+          cd mesa
+          export CC=clang
+          export CXX=clang++
+          mkdir -p builddir
+          meson setup builddir \
+            --libdir=lib \
+            -Dprefix=/tmp/zink-static-install \
+            -Dbuildtype=release \
+            -Dplatforms=x11 \
+            -Degl-native-platform=x11 \
+            -Dglx=dri \
+            -Dglx-direct=true \
+            -Dopengl=true \
+            -Dgles1=enabled \
+            -Dgles2=enabled \
+            -Dglvnd=disabled \
+            -Degl=enabled \
+            -Dllvm=disabled \
+            -Dshared-llvm=enabled \
+            -Dshader-cache=enabled \
+            -Dshared-glapi=enabled \
+            -Dxlib-lease=enabled \
+            -Dvulkan-beta=true \
+            -Dlibunwind=disabled \
+            -Dvalgrind=disabled \
+            -Dmicrosoft-clc=disabled \
+            -Dgallium-rusticl=false \
+            -Dgallium-extra-hud=true \
+            -Dgallium-drivers=zink,freedreno \
+            -Dshader-cache-default=true \
+            -Dvulkan-drivers=freedreno \
+            -Dfreedreno-kmds=kgsl \
+            -Dvideo-codecs=all \
+            -Dgbm=disabled \
+            -Db_ndebug=true \
+            -Dstatic-libgl=true \
+            -Dstrip=true
+          ninja -C builddir -j$(nproc)
+
+      - name: 校验单文件结果
+        run: |
+          set -e
+          LIBGL=$(find builddir -name 'libGL.so.1.2.0' -o -name 'libGL.so.1.*' | head -1)
+          echo "libGL: $LIBGL"
+          ls -la "$LIBGL"
+          echo "--- DT_NEEDED ---"
+          readelf -d "$LIBGL" | grep NEEDED || true
+          if readelf -d "$LIBGL" | grep -q 'NEEDED.*libgallium'; then
+            echo "❌ 仍依赖 libgallium，静态内联失败"
+            exit 1
+          fi
+          echo "✅ 无 libgallium 依赖，单文件成立"
+          echo "--- 关键符号 ---"
+          nm -D --defined-only "$LIBGL" | grep -cE '^.* T (gl|glX)' || true
+
+      - name: 打包
+        run: |
+          set -e
+          STAGE="$PWD/zstatic-stage"
+          rm -rf "$STAGE"; mkdir -p "$STAGE"
+          LIBGL=$(find mesa/builddir -name 'libGL.so.1.2.0' | head -1)
+          [ -n "$LIBGL" ] || { echo "❌ 找不到 libGL.so.1.2.0"; exit 1; }
+          cp -av "$LIBGL" "$STAGE/libGL.so.1.2.0"
+          ln -sf libGL.so.1.2.0 "$STAGE/libGL.so.1"
+          ln -sf libGL.so.1 "$STAGE/libGL.so"
+
+          ZTAR="zink-static-${TAG}.tar.gz"
+          tar -czf "$ZTAR" -C "$STAGE" .
+          sha256sum "$ZTAR" > "${ZTAR}.sha256"
+          echo "ZTAR_STATIC=${ZTAR}" >> "$GITHUB_ENV"
+          echo "✅ $ZTAR ($(du -h "$ZTAR" | cut -f1))"
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TAG }}-zink-static
+          path: |
+            ${{ env.ZTAR_STATIC }}
+            ${{ env.ZTAR_STATIC }}.sha256
+
+      - name: 追加到 Release
+        if: ${{ env.TAG != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${TAG}" "${ZTAR_STATIC}" "${ZTAR_STATIC}.sha256" --clobber || \
+            echo "⚠️ Release ${TAG} 尚不存在（build job 可能还没跑完），仅保留 artifact"

@@ -469,6 +469,17 @@ jobs:
             else
               echo "  未找到 libgallium_dri_static.a"
             fi
+            echo "=== 诊断 B0: dri_target.c 预处理后是否含 zink 段 ==="
+            DT=$(find mesa/builddir -name 'dri_target.c.o' | grep dri_static | head -1)
+            echo "  obj=$DT"
+            if [ -f mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a.p/dri_target.c.o ]; then
+              O=mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a.p/dri_target.c.o
+              echo "  该 .o 的驱动名候选:"; python3 ci/check_driver_registry.py --dump "$O"
+            fi
+            echo "=== 诊断 B1: 用 ninja 拿 dri_target.c 的真实编译命令 ==="
+            ninja -C mesa/builddir -t commands src/gallium/targets/dri/libgallium_dri_static.a.p/dri_target.c.o 2>/dev/null | tail -1 > /tmp/dtcmd.txt || echo "  取不到"
+            wc -c /tmp/dtcmd.txt
+            grep -o -- '-DGALLIUM_[A-Z0-9_]*' /tmp/dtcmd.txt | sort -u | head -30 || true
             echo "=== 诊断 B: 构建期 GALLIUM_ZINK 定义次数 ==="
             grep -c 'GALLIUM_ZINK' mesa/builddir/build.ninja 2>/dev/null || echo 0
             echo "=== 诊断 C: libGL.so.1 全量候选 ==="

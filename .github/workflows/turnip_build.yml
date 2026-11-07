@@ -415,7 +415,7 @@ jobs:
             -Dmicrosoft-clc=disabled \
             -Dgallium-rusticl=false \
             -Dgallium-extra-hud=true \
-            -Dgallium-drivers=zink \
+            -Dgallium-drivers=zink,freedreno \
             -Dshader-cache-default=true \
             -Dvulkan-drivers=freedreno \
             -Dfreedreno-kmds=kgsl \

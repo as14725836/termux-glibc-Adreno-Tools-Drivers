@@ -439,7 +439,15 @@ jobs:
           python3 ci/check_driver_registry.py "$LIBGL" zink swrast || true
           # .symtab + .strtab 约 2.5 MB，运行时完全用不到；
           # 动态符号 (.dynsym) 保留，gl*/glX* 导出接口不受影响。
-          strip --strip-unneeded "$LIBGL"
+          #
+          # 必须加 --keep-section=.data.rel.ro：drivers 注册表
+          # （dri_target.c 展开的 *_driver_descriptor 结构体）就放在这个段里，
+          # 它们是纯数据，只被同样无人引用的 driver_descriptors[] 数组指着。
+          # --strip-unneeded 判定“重定位后不再需要”，会把 zink 这一项删掉，
+          # 而走 STUB 分支的其它驱动因为自带 fprintf 字符串反而留下。
+          # 结果就是注册表里独缺 zink，运行期静默退化到 swrast 并报
+          # "glx: failed to create drisw screen"。
+          strip --strip-unneeded --keep-section=.data.rel.ro "$LIBGL"
           echo "strip 后: $(stat -c %s "$LIBGL") 字节 ($(du -h "$LIBGL" | cut -f1))"
           echo "--- 确认静态符号表已移除 ---"
           readelf -S "$LIBGL" | grep -E '\.symtab|\.strtab' && {

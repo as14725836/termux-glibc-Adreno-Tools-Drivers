@@ -476,6 +476,11 @@ jobs:
               O=mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a.p/dri_target.c.o
               echo "  该 .o 的驱动名候选:"; python3 ci/check_driver_registry.py --dump "$O"
             fi
+            echo "=== 诊断 B3: .a 完整成员列表 ==="
+            ar t mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a
+            echo "  集合大小: $(ar t mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a | wc -l)"
+            echo "=== 诊断 B4: 直接查该 .a 里 dri_target.c.o 的路径与内容 ==="
+            ar tv mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a | grep -i dri_target || echo "  ⚠️ .a 里没有 dri_target.c.o"
             echo "=== 诊断 B2: libGL 的真实链接命令 ==="
             ninja -C mesa/builddir -t commands src/glx/libGL.so.1.2.0 2>/dev/null | tail -1 > /tmp/glcmd.txt || echo "取不到"
             echo "  长度 $(wc -c < /tmp/glcmd.txt) B"

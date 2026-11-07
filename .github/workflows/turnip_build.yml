@@ -415,7 +415,7 @@ jobs:
             -Dmicrosoft-clc=disabled \
             -Dgallium-rusticl=false \
             -Dgallium-extra-hud=true \
-            -Dgallium-drivers=zink,freedreno \
+            -Dgallium-drivers=zink \
             -Dshader-cache-default=true \
             -Dvulkan-drivers=freedreno \
             -Dfreedreno-kmds=kgsl \
@@ -432,24 +432,17 @@ jobs:
           LIBGL=$(find mesa/builddir -name 'libGL.so.1.2.0' | head -1)
           [ -n "$LIBGL" ] || { echo "❌ 找不到 libGL.so.1.2.0"; exit 1; }
           echo "strip 前: $(stat -c %s "$LIBGL") 字节 ($(du -h "$LIBGL" | cut -f1))"
-          echo "--- strip 前注册表检测 ---"
-          python3 ci/check_driver_registry.py "$LIBGL" zink swrast || true
-          echo "--- strip 前：直接读 zink_driver_descriptor.driver_name ---"
-          python3 ci/check_driver_registry.py --dump "$LIBGL" || true
-          python3 ci/check_driver_registry.py "$LIBGL" zink swrast || true
           # .symtab + .strtab 约 2.5 MB，运行时完全用不到；
           # 动态符号 (.dynsym) 保留，gl*/glX* 导出接口不受影响。
           #
-          # 不能用 --strip-unneeded：drivers 注册表
-          # （dri_target.c 展开的 *_driver_descriptor 结构体）就放在这个段里，
-          # 它们是纯数据，只被同样无人引用的 driver_descriptors[] 数组指着。
+          # 不能用 --strip-unneeded：驱动注册表（dri_target.c 展开的
+          # *_driver_descriptor 结构体）就在 .data.rel.ro 里，是纯数据，
+          # 只被同样无人引用的 driver_descriptors[] 数组指着。
           # --strip-unneeded 判定“重定位后不再需要”，会把 zink 这一项删掉，
           # 而走 STUB 分支的其它驱动因为自带 fprintf 字符串反而留下。
-          # 结果就是注册表里独缺 zink，运行期静默退化到 swrast 并报
-          # "glx: failed to create drisw screen"。
           # --keep-section=.data.rel.ro 在 binutils 上无效（strip 后字节数
-          # 完全不变），所以直接改用 --strip-debug：
-          # 只删 .debug_* 段，绝不会碰 .data.rel.ro 里的注册表数据。
+          # 完全不变），所以改用 --strip-debug：只删 .debug_* 段，
+          # 绝不碰 .data.rel.ro 里的注册表数据。
           strip --strip-debug "$LIBGL"
           echo "strip 后: $(stat -c %s "$LIBGL") 字节 ($(du -h "$LIBGL" | cut -f1))"
           echo "--- 确认调试段已移除 ---"
@@ -477,43 +470,14 @@ jobs:
           echo "✅ 无 libgallium 依赖，单文件成立"
           echo "--- 关键符号 ---"
           nm -D --defined-only "$LIBGL" | grep -cE '^.* T (gl|glX)' || true
-          echo "--- 驱动注册表自检（必须有 zink）---"
+          echo "--- 驱动注册表自检（必须有 zink 注册项）---"
           if ! python3 ci/check_driver_registry.py "$LIBGL" zink swrast; then
-            echo "=== 诊断 A: 静态库 .a ==="
-            A=$(find mesa/builddir -name 'libgallium_dri_static.a' | head -1)
-            if [ -n "$A" ]; then
-              python3 ci/check_driver_registry.py --dump "$A"
-              echo "  .a 内对象文件:"; ar t "$A" | head -8
-            else
-              echo "  未找到 libgallium_dri_static.a"
-            fi
-            echo "=== 诊断 B0: dri_target.c 预处理后是否含 zink 段 ==="
-            DT=$(find mesa/builddir -name 'dri_target.c.o' | grep dri_static | head -1)
-            echo "  obj=$DT"
-            if [ -f mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a.p/dri_target.c.o ]; then
-              O=mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a.p/dri_target.c.o
-              echo "  该 .o 的驱动名候选:"; python3 ci/check_driver_registry.py --dump "$O"
-            fi
-            echo "=== 诊断 B3: .a 完整成员列表 ==="
-            ar t mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a
-            echo "  集合大小: $(ar t mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a | wc -l)"
-            echo "=== 诊断 B4: 直接查该 .a 里 dri_target.c.o 的路径与内容 ==="
-            ar tv mesa/builddir/src/gallium/targets/dri/libgallium_dri_static.a | grep -i dri_target || echo "  ⚠️ .a 里没有 dri_target.c.o"
-            echo "=== 诊断 B2: libGL 的真实链接命令 ==="
-            ninja -C mesa/builddir -t commands src/glx/libGL.so.1.2.0 2>/dev/null | tail -1 > /tmp/glcmd.txt || echo "取不到"
-            echo "  长度 $(wc -c < /tmp/glcmd.txt) B"
-            echo "  链接输入里的 .a / .so:"; tr ' ' '\n' < /tmp/glcmd.txt | grep -E '\.(a|so)$|whole-archive|no-whole' | head -40
-            echo "  是否含 dri_static:"; grep -c 'dri_static' /tmp/glcmd.txt || true
-            echo "=== 诊断 B1: 用 ninja 拿 dri_target.c 的真实编译命令 ==="
-            ninja -C mesa/builddir -t commands src/gallium/targets/dri/libgallium_dri_static.a.p/dri_target.c.o 2>/dev/null | tail -1 > /tmp/dtcmd.txt || echo "  取不到"
-            wc -c /tmp/dtcmd.txt
-            grep -o -- '-DGALLIUM_[A-Z0-9_]*' /tmp/dtcmd.txt | sort -u | head -30 || true
-            echo "=== 诊断 B: 构建期 GALLIUM_ZINK 定义次数 ==="
-            grep -c 'GALLIUM_ZINK' mesa/builddir/build.ninja 2>/dev/null || echo 0
-            echo "=== 诊断 C: libGL.so.1 全量候选 ==="
-            python3 ci/check_driver_registry.py --dump "$LIBGL"
+            echo "❌ zink 驱动注册项缺失，运行期会退化到 swrast"
+            python3 ci/check_driver_registry.py --dump "$LIBGL" || true
             exit 1
           fi
+          echo "✅ zink 注册项存在"
+
       - name: 打包
         run: |
           set -e

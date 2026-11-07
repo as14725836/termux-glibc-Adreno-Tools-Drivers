@@ -119,7 +119,7 @@ glx_gallium_whole = []
 if with_dri
   if get_option('static-libgl')
     # libgallium_dri_static 里承载驱动注册表的是 dri_target.c.o，
-    # 它只提供 dri_driver_descriptions[] 数据，没有任何被 libglx 引用的
+    # 它只提供 *_driver_descriptor 数据，没有任何被 libglx 引用的
     # 导出符号。用 link_with 时链接器看不到引用，整个 .o 会被丢弃，
     # 结果 libGL.so.1 里查不到 zink 注册项，运行期静默退化到 swrast
     # 并报 "glx: failed to create drisw screen"。必须 link_whole 全量拉入。

@@ -415,7 +415,7 @@ jobs:
             -Dmicrosoft-clc=disabled \
             -Dgallium-rusticl=false \
             -Dgallium-extra-hud=true \
-            -Dgallium-drivers=zink \
+            -Dgallium-drivers=zink,freedreno \
             -Dshader-cache-default=true \
             -Dvulkan-drivers=freedreno \
             -Dfreedreno-kmds=kgsl \
@@ -459,6 +459,20 @@ jobs:
           echo "✅ 无 libgallium 依赖，单文件成立"
           echo "--- 关键符号 ---"
           nm -D --defined-only "$LIBGL" | grep -cE '^.* T (gl|glX)' || true
+          echo "--- 驱动注册表自检（必须有 zink）---"
+          # 只有 zink 没有 freedreno 时，Mesa 的 gallium 驱动注册表里
+          # 不会出现 "zink" 这一项，运行期 MESA_LOADER_DRIVER_OVERRIDE=zink
+          # 会静默退化到 swrast 并报 "failed to create drisw screen"。
+          for drv in zink swrast; do
+            if strings "$LIBGL" | grep -qx "$drv"; then
+              echo "  ✅ 驱动注册项存在: $drv"
+            else
+              echo "  ❌ 驱动注册项缺失: $drv"
+              echo "驱动注册表里当前含有的项:"
+              strings "$LIBGL" | grep -xE 'zink|swrast|kgsl|freedreno|asahi|llvmpipe' || true
+              exit 1
+            fi
+          done
 
       - name: 打包
         run: |

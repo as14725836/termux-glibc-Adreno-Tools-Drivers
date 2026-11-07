@@ -460,31 +460,21 @@ jobs:
           echo "--- 关键符号 ---"
           nm -D --defined-only "$LIBGL" | grep -cE '^.* T (gl|glX)' || true
           echo "--- 驱动注册表自检（必须有 zink）---"
-          # libgallium_dri_static 里承载注册表的是 dri_target.c.o，它只有
-          # dri_driver_descriptions[] 数据、没有外导符号。若用 link_with，
-          # 链接器判定无人引用会丢弃整个 .o，libGL.so.1 里不会有 "zink"
-          # 注册项，运行期静默退化到 swrast 并报
-          # "glx: failed to create drisw screen" /
-          # "couldn't find RGB GLX visual or fbconfig"。必须 link_whole。
-          # DRM_DRIVER_DESCRIPTOR(zink,...) 与 DRIVER_DESCRIPTOR_STUB 都会
-          # 展开出独立字符串 "zink"，因此这里用精确整行匹配即可。
-          MISSING=0
-          for drv in zink swrast; do
-            if strings "$LIBGL" | grep -qx "$drv"; then
-              echo "  ✅ 驱动注册项存在: $drv"
+          if ! python3 ci/check_driver_registry.py "$LIBGL" zink swrast; then
+            echo "=== 诊断 A: 静态库 .a ==="
+            A=$(find mesa/builddir -name 'libgallium_dri_static.a' | head -1)
+            if [ -n "$A" ]; then
+              python3 ci/check_driver_registry.py --dump "$A"
+              echo "  .a 内对象文件:"; ar t "$A" | head -8
             else
-              echo "  ❌ 驱动注册项缺失: $drv"
-              MISSING=1
+              echo "  未找到 libgallium_dri_static.a"
             fi
-          done
-          if [ "$MISSING" = "1" ]; then
-            echo "--- 诊断：libgallium_dri_static 是否被丢弃 ---"
-            echo "libGL.so.1 里现有可能是驱动名的字符串:"
-            strings "$LIBGL" | grep -xE 'zink|swrast|kgsl|freedreno|asahi|llvmpipe|kms_swrast' || echo "  (一个都没有)"
-            echo "静态注册表建议检查: dri_target.c.o 是否进了链接"
+            echo "=== 诊断 B: 构建期 GALLIUM_ZINK 定义次数 ==="
+            grep -c 'GALLIUM_ZINK' mesa/builddir/build.ninja 2>/dev/null || echo 0
+            echo "=== 诊断 C: libGL.so.1 全量候选 ==="
+            python3 ci/check_driver_registry.py --dump "$LIBGL"
             exit 1
           fi
-
       - name: 打包
         run: |
           set -e

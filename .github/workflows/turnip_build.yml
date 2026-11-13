@@ -386,6 +386,12 @@ jobs:
           # 让产物真正单文件：不再需要 libEGL.so.1 / libgallium-*.so。
           # 必须在上一步之后：它复用 libgallium_dri_static。
           python3 ci/inject_static_egl.py mesa
+          # 让 EGL/kopper 也尊重 MESA_LOADER_DRIVER_OVERRIDE，
+          # 并且支持在没有 /dev/dri 的环境下用 /dev/kgsl-3d0 跑原生 freedreno。
+          # 默认行为不变（MESA_KOPPER_ZINK 默认 true），要试 kgsl 时设：
+          #   MESA_KOPPER_ZINK=0 MESA_KOPPER_KGSL=/dev/kgsl-3d0 \
+          #   MESA_LOADER_DRIVER_OVERRIDE=freedreno FD_FORCE_KGSL=1
+          python3 ci/inject_kopper_driver_choice.py mesa
 
       - name: 构建 (static-libgl=true)
         run: |

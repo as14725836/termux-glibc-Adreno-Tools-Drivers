@@ -540,13 +540,32 @@ jobs:
           # 客户端扩展串里也带着 Wine 硬性要求的
           # EGL_KHR_client_get_all_proc_addresses 与 EGL_EXT_platform_base，
           # 因此同一个文件改名即可直接充当 libEGL 供应商。
-          # 用硬链接：不额外占空间，解压后仍是同一个 inode。
-          # Wine 走 wglGetProcAddress 时按 SONAME 查找也不算错：
-          # 两条路最终都指向这一份代码，不会出现两套 EGL 状态。
-          ln "$STAGE/libGL.so.1" "$STAGE/libEGL.so.1"
+          # 用符号链接而不是硬链接：
+          # 硬链接在 tar 里是一个 size=0 的 'h' 条目（内容只存一份），
+          # GNU tar 能正确还原，但 busybox/toybox 的 tar 不支持，
+          # 会解出一个 0 字节的 libGL.so.1，Wine 加载直接失败，
+          # 而且很难联想到是打包方式的问题。
+          # 软链接是独立条目、只存一个路径串，所有 tar 都认。
+          ln -s libGL.so.1 "$STAGE/libEGL.so.1"
 
           echo "--- 打包内容 ---"
           ls -la "$STAGE"
+
+          # libEGL.so.1 必须是指向 libGL.so.1 的软链接，且能解析到实体。
+          # 别让它变成 0 字节普通文件——那会让 wgl 拿到一个空库。
+          if [ ! -L "$STAGE/libEGL.so.1" ]; then
+            echo "❌ libEGL.so.1 不是符号链接"
+            ls -la "$STAGE"
+            exit 1
+          fi
+          if [ ! -f "$STAGE/libGL.so.1" ] || [ ! -s "$STAGE/libGL.so.1" ]; then
+            echo "❌ libGL.so.1 缺失或为空"
+            ls -la "$STAGE"
+            exit 1
+          fi
+          [ "$(readlink -f "$STAGE/libEGL.so.1")" = "$(readlink -f "$STAGE/libGL.so.1")" ] || {
+            echo "❌ libEGL.so.1 未解析到 libGL.so.1"; ls -la "$STAGE"; exit 1; }
+          echo "✅ libEGL.so.1 -> libGL.so.1 链接正确"
 
           # 实测：libEGL.so.1 必须能被 dlopen 拿到 wine 需要的两个符号，
           # 且客户端扩展串含 egl_init() 硬性要求的两项。

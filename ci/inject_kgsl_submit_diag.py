@@ -64,6 +64,16 @@ AFTER = '''    /* @MARK@-after */
         fprintf(stderr, "[KGSL-DIAG]   -> ret=%d errno=%d (%s) ts=%llu\\n",
                 ret, ret ? errno : 0, ret ? strerror(errno) : "ok",
                 ret ? 0ULL : (unsigned long long) req.timestamp);
+    /* LG-KGSL-DIAG-serial: IB_KGSL_SERIAL=1 每笔提交后立刻等 GPU 完成 */
+    if (getenv("IB_KGSL_SERIAL") && ret == 0) {
+        struct kgsl_device_waittimestamp_ctxtid w_ = {
+            .context_id = kgsl_pipe->queue_id,
+            .timestamp = req.timestamp,
+            .timeout = 2000,
+        };
+        (void) kgsl_pipe_safe_ioctl(pipe->dev->fd,
+                                    IOCTL_KGSL_DEVICE_WAITTIMESTAMP_CTXTID, &w_);
+    }
 '''.replace('@MARK@', MARKER)
 
 

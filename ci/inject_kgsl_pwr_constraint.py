@@ -36,7 +36,7 @@ MARKER = 'LORIE-KGSL-PWR'
 HELPER = '''/* @MARK@: 与 turnip tu_knl_kgsl.cc:53 的 dd_set_pwr_max_constraint 对齐。
  * 不给 kgsl context 设 PWR_MAX 上限时，本机内核会让真正的渲染提交返回
  * EDEADLK（turnip 把这个错误码当 context fault 处理）。 */
-int
+static int
 kgsl_pipe_set_pwr_max(int fd, uint32_t context_id)
 {
    struct kgsl_device_constraint_pwrlevel pwrlevel = {

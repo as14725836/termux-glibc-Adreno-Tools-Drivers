@@ -496,8 +496,15 @@ jobs:
           echo "--- 关键符号 ---"
           nm -D --defined-only "$LIBGL" | grep -cE '^.* T (gl|glX)' || true
           echo "--- 驱动注册表自检（必须有 zink 注册项）---"
-          if ! python3 ci/check_driver_registry.py "$LIBGL" zink swrast; then
-            echo "❌ zink 驱动注册项缺失，运行期会退化到 swrast"
+          # 只校验 zink：本构建 -Dgallium-drivers=zink,freedreno，
+          # swrast 根本没编进来。它以前能"通过"纯属巧合——所有未启用
+          # 驱动都有一个 DRM_DRIVER_DESCRIPTOR_STUB，其
+          # fprintf(stderr, "swrast: driver missing\n") 里带着一个
+          # 独立的 "swrast" 字符串，脚本的退化检测就把它当成驱动存在。
+          # EGL 静态内联改变了链接布局，该字符串不再独立存在，这个
+          # 假阳性随之暴露。真正的断言只有 zink。
+          if ! python3 ci/check_driver_registry.py "$LIBGL" zink; then
+            echo "❌ zink 驱动注册项缺失，运行期无法使用 zink"
             python3 ci/check_driver_registry.py --dump "$LIBGL" || true
             exit 1
           fi

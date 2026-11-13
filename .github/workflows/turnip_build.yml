@@ -523,6 +523,39 @@ jobs:
           # 不依赖 libGL.so.1.2.0，也不再夹带 libGL.so 编译期软链。
           cp -av "$LIBGL" "$STAGE/libGL.so.1"
 
+          # ---------------------------------------------------------------
+          # 额外提供 libEGL.so.1（指向同一个文件）
+          #
+          # 为什么光把 EGL 静态链进 libGL.so.1 还不够：
+          # Wine 的 win32u/opengl.c:egl_init() 是这样拿 EGL 的——
+          #     dlopen( SONAME_LIBEGL /* "libEGL.so.1" */, RTLD_NOW|RTLD_GLOBAL )
+          #     dlsym( handle, "eglGetProcAddress" );  dlsym( handle, "eglQueryString" );
+          # 其余全部函数再用 eglGetProcAddress() 取。
+          # dlopen 是按"文件名"在搜索路径里找 .so，不会去 libGL.so.1 的
+          # 符号表里翻。所以只内联不建这个文件，wgl 依然会报
+          #   err:wgl:egl_init Failed to load libEGL.so.1
+          #
+          # libGL.so.1 已经导出了完整 EGL 1.5 的 44 个入口
+          # （eglGetDisplay/eglInitialize/eglCreateContext/...），
+          # 客户端扩展串里也带着 Wine 硬性要求的
+          # EGL_KHR_client_get_all_proc_addresses 与 EGL_EXT_platform_base，
+          # 因此同一个文件改名即可直接充当 libEGL 供应商。
+          # 用硬链接：不额外占空间，解压后仍是同一个 inode。
+          # Wine 走 wglGetProcAddress 时按 SONAME 查找也不算错：
+          # 两条路最终都指向这一份代码，不会出现两套 EGL 状态。
+          ln "$STAGE/libGL.so.1" "$STAGE/libEGL.so.1"
+
+          echo "--- 打包内容 ---"
+          ls -la "$STAGE"
+
+          # 实测：libEGL.so.1 必须能被 dlopen 拿到 wine 需要的两个符号，
+          # 且客户端扩展串含 egl_init() 硬性要求的两项。
+          if ! python3 ci/probe_libegl.py "$STAGE/libEGL.so.1"; then
+            echo "❌ libEGL.so.1 不能满足 Wine 的 EGL 加载要求"
+            exit 1
+          fi
+          echo "✅ libEGL.so.1 可用：Wine wgl 的 egl_init 链路验证通过"
+
           ZTAR="zink-static-${TAG}.tar.gz"
           tar -czf "$ZTAR" -C "$STAGE" .
           sha256sum "$ZTAR" > "${ZTAR}.sha256"

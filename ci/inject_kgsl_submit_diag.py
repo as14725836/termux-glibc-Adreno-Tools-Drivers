@@ -23,9 +23,11 @@ INSERT = '''    /* @MARK@ */
         fprintf(stderr, "[KGSL-DIAG] ctx=%u numcmds=%u numsyncs=%u infence=%d\\n",
                 kgsl_pipe->queue_id, cmd_idx, req.numsyncs, fd_submit->in_fence_fd);
         for (unsigned d = 0; d < cmd_idx; d++)
-            fprintf(stderr, "[KGSL-DIAG]   ib[%u] gpuaddr=0x%llx offset=%u size=%u flags=0x%x id=%u\\n",
-                    d, (unsigned long long) cmds[d].gpuaddr, cmds[d].offset,
-                    cmds[d].size, cmds[d].flags, cmds[d].id);
+            fprintf(stderr, "[KGSL-DIAG]   ib[%u] gpuaddr=0x%llx offset=%llu size=%llu flags=0x%x id=%u\\n",
+                    d, (unsigned long long) cmds[d].gpuaddr,
+                    (unsigned long long) cmds[d].offset,
+                    (unsigned long long) cmds[d].size,
+                    cmds[d].flags, cmds[d].id);
     }
 '''.replace('@MARK@', MARKER)
 

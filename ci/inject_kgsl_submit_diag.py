@@ -43,6 +43,20 @@ INSERT = '''    /* @MARK@ */
             }
         }
     }
+    /* @MARK@-trunc: IB_KGSL_TRUNC=N 只提交前 N 个 dword，用于二分定位
+     * 让 GPU 挂死的那条 pm4 命令。0/不设 = 不截断。 */
+    {
+        const char *t_ = getenv("IB_KGSL_TRUNC");
+        unsigned tr_ = t_ ? (unsigned) atoi(t_) : 0;
+        if (tr_ > 0) {
+            for (unsigned d_ = 0; d_ < cmd_idx; d_++) {
+                unsigned bytes_ = tr_ * 4;
+                if (cmds[d_].size > bytes_)
+                    cmds[d_].size = bytes_;
+            }
+            fprintf(stderr, "[KGSL-TRUNC] trunc to %u dwords\\n", tr_);
+        }
+    }
 '''.replace('@MARK@', MARKER)
 
 AFTER = '''    /* @MARK@-after */

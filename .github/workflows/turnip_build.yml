@@ -92,6 +92,9 @@ jobs:
           python3 ci/inject_static_egl.py mesa
           # kgsl in-fence EDEADLK 修复（见 inject_kgsl_cpu_wait_fence.py）
           python3 ci/inject_kgsl_cpu_wait_fence.py mesa
+          # 补齐 kgsl context 的功率约束（对齐 turnip tu_knl_kgsl.cc）：
+          # 缺 PWR_CONSTRAINT 时本机内核让真正的渲染提交返回 EDEADLK。
+          python3 ci/inject_kgsl_pwr_constraint.py mesa
           
       - name: 构建 Mesa
         run: |
@@ -399,6 +402,9 @@ jobs:
           # （"submit failed -1 (Resource deadlock avoided)"）。
           # 改成提交前在 CPU 侧等 fence signal，语义不变。
           python3 ci/inject_kgsl_cpu_wait_fence.py mesa
+          # 补齐 kgsl context 的功率约束（对齐 turnip tu_knl_kgsl.cc）：
+          # 缺 PWR_CONSTRAINT 时本机内核让真正的渲染提交返回 EDEADLK。
+          python3 ci/inject_kgsl_pwr_constraint.py mesa
 
       - name: 构建 (static-libgl=true)
         run: |

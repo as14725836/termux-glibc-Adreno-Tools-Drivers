@@ -90,6 +90,8 @@ jobs:
           python3 ci/inject_static_libgl.py mesa
           # libEGL 静态内联（仅 static-libgl=true 时生效）
           python3 ci/inject_static_egl.py mesa
+          # kgsl in-fence EDEADLK 修复（见 inject_kgsl_cpu_wait_fence.py）
+          python3 ci/inject_kgsl_cpu_wait_fence.py mesa
           
       - name: 构建 Mesa
         run: |
@@ -392,6 +394,11 @@ jobs:
           #   MESA_KOPPER_ZINK=0 MESA_KOPPER_KGSL=/dev/kgsl-3d0 \
           #   MESA_LOADER_DRIVER_OVERRIDE=freedreno FD_FORCE_KGSL=1
           python3 ci/inject_kopper_driver_choice.py mesa
+          # kgsl 后端不能用内核 syncpoint 传 in-fence：交换链的 fence 来自
+          # 同一个 kgsl context，内核会判定自我等待并返回 EDEADLK
+          # （"submit failed -1 (Resource deadlock avoided)"）。
+          # 改成提交前在 CPU 侧等 fence signal，语义不变。
+          python3 ci/inject_kgsl_cpu_wait_fence.py mesa
 
       - name: 构建 (static-libgl=true)
         run: |

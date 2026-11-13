@@ -17,17 +17,31 @@ MARKER = 'LG-KGSL-DIAG'
 
 INSERT = '''    /* @MARK@ */
     static int diag = -1;
-    if (diag < 0)
-        diag = getenv("LG_KGSL_DIAG") != NULL;
+    if (diag < 0) {
+        const char *d = getenv("LG_KGSL_DIAG");
+        diag = d ? atoi(d) : 0;
+    }
     if (diag) {
         fprintf(stderr, "[KGSL-DIAG] ctx=%u numcmds=%u numsyncs=%u infence=%d\\n",
                 kgsl_pipe->queue_id, cmd_idx, req.numsyncs, fd_submit->in_fence_fd);
-        for (unsigned d = 0; d < cmd_idx; d++)
+        for (unsigned d = 0; d < cmd_idx; d++) {
             fprintf(stderr, "[KGSL-DIAG]   ib[%u] gpuaddr=0x%llx offset=%llu size=%llu flags=0x%x id=%u\\n",
                     d, (unsigned long long) cmds[d].gpuaddr,
                     (unsigned long long) cmds[d].offset,
                     (unsigned long long) cmds[d].size,
                     cmds[d].flags, cmds[d].id);
+            /* LG_KGSL_DIAG=2 时把 IB 的 dword 流打出来，用于人工解 pm4 包 */
+            if (diag >= 2) {
+                struct fd_ringbuffer_sp *dp = to_fd_ringbuffer_sp(fd_submit->base.primary);
+                struct fd_bo *rbo = dp->u.cmds[d].ring_bo;
+                const uint32_t *w = fd_bo_map(rbo);
+                if (w) {
+                    unsigned words = dp->u.cmds[d].size / 4;
+                    for (unsigned k = 0; k < words && k < 320; k++)
+                        fprintf(stderr, "[KGSL-IB] %03u: %08x\\n", k, w[k]);
+                }
+            }
+        }
     }
 '''.replace('@MARK@', MARKER)
 

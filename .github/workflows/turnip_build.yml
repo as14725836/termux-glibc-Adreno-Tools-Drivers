@@ -95,6 +95,9 @@ jobs:
           # 补齐 kgsl context 的功率约束（对齐 turnip tu_knl_kgsl.cc）：
           # 缺 PWR_CONSTRAINT 时本机内核让真正的渲染提交返回 EDEADLK。
           python3 ci/inject_kgsl_pwr_constraint.py mesa
+          # 提交诊断：LG_KGSL_DIAG=1 时打印每笔 GPU_COMMAND 的 ctx/IB/errno，
+          # 用来定位 EDEADLK。默认关闭。
+          python3 ci/inject_kgsl_submit_diag.py mesa
           
       - name: 构建 Mesa
         run: |
@@ -405,6 +408,9 @@ jobs:
           # 补齐 kgsl context 的功率约束（对齐 turnip tu_knl_kgsl.cc）：
           # 缺 PWR_CONSTRAINT 时本机内核让真正的渲染提交返回 EDEADLK。
           python3 ci/inject_kgsl_pwr_constraint.py mesa
+          # 提交诊断：LG_KGSL_DIAG=1 时打印每笔 GPU_COMMAND 的 ctx/IB/errno，
+          # 用来定位 EDEADLK。默认关闭。
+          python3 ci/inject_kgsl_submit_diag.py mesa
 
       - name: 构建 (static-libgl=true)
         run: |

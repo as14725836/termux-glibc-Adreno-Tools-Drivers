@@ -31,9 +31,9 @@ INSERT = '''    /* @MARK@ */
 
 AFTER = '''    /* @MARK@-after */
     if (diag)
-        fprintf(stderr, "[KGSL-DIAG]   -> ret=%d errno=%d (%s) ts=%u\\n",
+        fprintf(stderr, "[KGSL-DIAG]   -> ret=%d errno=%d (%s) ts=%llu\\n",
                 ret, ret ? errno : 0, ret ? strerror(errno) : "ok",
-                ret ? 0 : req.timestamp);
+                ret ? 0ULL : (unsigned long long) req.timestamp);
 '''.replace('@MARK@', MARKER)
 
 

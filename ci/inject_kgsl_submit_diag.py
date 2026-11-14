@@ -46,6 +46,28 @@ INSERT = '''    /* @MARK@ */
             }
         }
     }
+    /* @MARK@-pad: IB_KGSL_PAD=N 在每笔 IB 之后把 BO 剩余 N 个 dword 填成
+     * CP_NOP(0x70000000)，用于验证「GPU 读越过 IB 末尾」这个假设：
+     * 若填 NOP 后不再 hang，则证实是 IBM 长度被短报、GPU 越界读垃圾。 */
+    {
+        const char *p_ = getenv("IB_KGSL_PAD");
+        if (p_) {
+            unsigned npad_ = (unsigned) atoi(p_);
+            struct fd_ringbuffer_sp *dp_ = to_fd_ringbuffer_sp(fd_submit->base.primary);
+            for (unsigned d_ = 0; d_ < cmd_idx && d_ < dp_->u.nr_cmds; d_++) {
+                struct fd_bo *rbo_ = dp_->u.cmds[d_].ring_bo;
+                uint32_t *w_ = fd_bo_map(rbo_);
+                if (!w_) continue;
+                unsigned used_ = dp_->u.cmds[d_].size / 4;
+                unsigned total_ = rbo_->size / 4;
+                unsigned lim_ = MIN2(total_, used_ + npad_);
+                for (unsigned k_ = used_; k_ < lim_; k_++)
+                    w_[k_] = 0x70000000;
+                fprintf(stderr, "[KGSL-PAD] ib[%u] used=%u/%u fill=%u !",
+                        d_, used_, total_, lim_ - used_);
+            }
+        }
+    }
     /* @MARK@-trunc: IB_KGSL_TRUNC=N 只提交前 N 个 dword，用于二分定位
      * 让 GPU 挂死的那条 pm4 命令。0/不设 = 不截断。 */
     {

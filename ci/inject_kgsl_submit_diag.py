@@ -22,6 +22,9 @@ INSERT = '''    /* @MARK@ */
         diag = d ? atoi(d) : 0;
     }
     if (diag) {
+        static unsigned kgsl_submit_seq;
+        kgsl_submit_seq++;
+        fprintf(stderr, "[KGSL-SEQ] %u", kgsl_submit_seq);
         fprintf(stderr, "[KGSL-DIAG] ctx=%u numcmds=%u numsyncs=%u infence=%d\\n",
                 kgsl_pipe->queue_id, cmd_idx, req.numsyncs, fd_submit->in_fence_fd);
         for (unsigned d = 0; d < cmd_idx; d++) {
@@ -31,7 +34,7 @@ INSERT = '''    /* @MARK@ */
                     (unsigned long long) cmds[d].size,
                     cmds[d].flags, cmds[d].id);
             /* LG_KGSL_DIAG=2 时把 IB 的 dword 流打出来，用于人工解 pm4 包 */
-            if (diag >= 2) {
+            if (diag >= 2 && (unsigned) atoi(getenv("IB_KGSL_DUMP_SKIP") ? getenv("IB_KGSL_DUMP_SKIP") : "0") <= kgsl_submit_seq) {
                 struct fd_ringbuffer_sp *dp = to_fd_ringbuffer_sp(fd_submit->base.primary);
                 struct fd_bo *rbo = dp->u.cmds[d].ring_bo;
                 const uint32_t *w = fd_bo_map(rbo);

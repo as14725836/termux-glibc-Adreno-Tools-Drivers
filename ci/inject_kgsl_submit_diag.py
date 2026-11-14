@@ -48,7 +48,11 @@ INSERT = '''    /* @MARK@ */
     {
         const char *t_ = getenv("IB_KGSL_TRUNC");
         unsigned tr_ = t_ ? (unsigned) atoi(t_) : 0;
-        if (tr_ > 0) {
+        if (getenv("IB_KGSL_ZERO")) {
+            for (unsigned d_ = 0; d_ < cmd_idx; d_++)
+                cmds[d_].size = 0;
+            fprintf(stderr, "[KGSL-ZERO] all IB size=0 !");
+        } else if (tr_ > 0) {
             for (unsigned d_ = 0; d_ < cmd_idx; d_++) {
                 unsigned bytes_ = tr_ * 4;
                 if (cmds[d_].size > bytes_)

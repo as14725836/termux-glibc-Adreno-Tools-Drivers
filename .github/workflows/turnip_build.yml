@@ -98,6 +98,7 @@ jobs:
           # 提交诊断：LG_KGSL_DIAG=1 时打印每笔 GPU_COMMAND 的 ctx/IB/errno，
           # 用来定位 EDEADLK。默认关闭。
           python3 ci/inject_kgsl_submit_diag.py mesa
+          python3 ci/inject_kgsl_ctx_flags.py mesa
           
       - name: 构建 Mesa
         run: |
@@ -411,6 +412,7 @@ jobs:
           # 提交诊断：LG_KGSL_DIAG=1 时打印每笔 GPU_COMMAND 的 ctx/IB/errno，
           # 用来定位 EDEADLK。默认关闭。
           python3 ci/inject_kgsl_submit_diag.py mesa
+          python3 ci/inject_kgsl_ctx_flags.py mesa
 
       - name: 构建 (static-libgl=true)
         run: |

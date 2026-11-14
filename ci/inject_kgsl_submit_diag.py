@@ -65,6 +65,10 @@ AFTER = '''    /* @MARK@-after */
                 ret, ret ? errno : 0, ret ? strerror(errno) : "ok",
                 ret ? 0ULL : (unsigned long long) req.timestamp);
     /* LG-KGSL-DIAG-serial: IB_KGSL_SERIAL=1 每笔提交后立刻等 GPU 完成 */
+    /* LG-KGSL-DIAG-nofence: IB_KGSL_NOFENCE=1 强制走 kfence 而不是 dma-fence fd，
+     * 用来验证 IOCTL_KGSL_TIMESTAMP_EVENT 是否是失败点。 */
+    if (getenv("IB_KGSL_NOFENCE"))
+        fd_submit->out_fence->use_fence_fd = false;
     if (getenv("IB_KGSL_SERIAL") && ret == 0) {
         struct kgsl_device_waittimestamp_ctxtid w_ = {
             .context_id = kgsl_pipe->queue_id,

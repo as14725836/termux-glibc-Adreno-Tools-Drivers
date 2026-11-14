@@ -79,8 +79,10 @@ AFTER = '''    /* @MARK@-after */
             .timestamp = req.timestamp,
             .timeout = 2000,
         };
-        (void) kgsl_pipe_safe_ioctl(pipe->dev->fd,
-                                    IOCTL_KGSL_DEVICE_WAITTIMESTAMP_CTXTID, &w_);
+        int wr_ = kgsl_pipe_safe_ioctl(pipe->dev->fd,
+                                       IOCTL_KGSL_DEVICE_WAITTIMESTAMP_CTXTID, &w_);
+        fprintf(stderr, "[KGSL-WAIT] ts=%llu ret=%d errno=%d",
+                (unsigned long long) req.timestamp, wr_, wr_ ? errno : 0);
     }
 '''.replace('@MARK@', MARKER)
 

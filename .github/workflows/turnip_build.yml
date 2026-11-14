@@ -99,6 +99,7 @@ jobs:
           # 用来定位 EDEADLK。默认关闭。
           python3 ci/inject_kgsl_submit_diag.py mesa
           python3 ci/inject_kgsl_ctx_flags.py mesa
+          python3 ci/inject_kgsl_submit_keepalive.py mesa
           
       - name: 构建 Mesa
         run: |
@@ -413,6 +414,7 @@ jobs:
           # 用来定位 EDEADLK。默认关闭。
           python3 ci/inject_kgsl_submit_diag.py mesa
           python3 ci/inject_kgsl_ctx_flags.py mesa
+          python3 ci/inject_kgsl_submit_keepalive.py mesa
 
       - name: 构建 (static-libgl=true)
         run: |
